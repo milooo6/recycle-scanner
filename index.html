@@ -1,394 +1,391 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>废品识别相机 · 今日回收价</title>
-  <!-- TensorFlow.js 和 coco-ssd 模型 -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>废品一眼价 · 拍照估价</title>
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #0f172a;
-      color: #e2e8f0;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
-      padding: 12px;
+      background: radial-gradient(ellipse at top, #134e4a 0%, #0b1220 55%);
+      min-height: 100vh; min-height: 100dvh;
+      color: #f1f5f9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+      line-height: 1.5;
     }
-    .app {
-      max-width: 480px;
-      width: 100%;
-      background: #1e293b;
-      border-radius: 28px;
-      overflow: hidden;
-      box-shadow: 0 20px 40px rgba(0,0,0,0.6);
-      display: flex;
-      flex-direction: column;
+    .wrap {
+      max-width: 28rem;
+      margin: 0 auto;
+      padding: 1.25rem 1rem calc(1.25rem + env(safe-area-inset-bottom));
     }
-    .header {
-      padding: 20px 16px 8px;
-      text-align: center;
+    .glass {
+      background: rgba(15, 23, 42, 0.82);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 1rem;
     }
-    .header h1 {
-      font-size: 1.8rem;
-      font-weight: 600;
-      background: linear-gradient(135deg, #fbbf24, #f59e0b);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-    .date-badge {
-      font-size: 0.8rem;
-      color: #94a3b8;
-      margin-top: 4px;
-    }
-    .camera-wrap {
+    .camera-box {
       position: relative;
-      width: 100%;
+      aspect-ratio: 4/3;
       background: #000;
-      aspect-ratio: 1 / 1;
-      max-height: 60vh;
+      border-radius: 1.25rem;
       overflow: hidden;
-      border-radius: 20px;
-      margin: 8px 16px;
+      margin-bottom: 0.9rem;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.4);
     }
-    video {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      display: block;
+    video, #previewImg {
+      width: 100%; height: 100%;
+      object-fit: cover; display: block;
     }
-    canvas {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      pointer-events: none;
+    #previewImg { display: none; }
+    .btn {
+      display: flex; align-items: center; justify-content: center; gap: 0.4rem;
+      border: none; border-radius: 1rem;
+      font-size: 0.875rem; font-weight: 500; cursor: pointer;
+      color: #fff; padding: 0.75rem 0.5rem;
     }
-    .result-card {
-      background: #0f172a;
-      margin: 12px 16px 24px;
-      border-radius: 20px;
-      padding: 20px;
-      border: 1px solid #334155;
-      transition: all 0.3s;
+    .btn:active { opacity: 0.9; transform: scale(0.98); }
+    .btn-primary { background: linear-gradient(135deg, #0d9488, #14b8a6); }
+    .btn-secondary { background: #1e293b; border: 1px solid #475569; }
+    .grid-2 { display: grid; grid-template-columns: 2fr 1fr; gap: 0.6rem; margin-bottom: 1rem; }
+    .grid-cats {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem;
     }
-    .loading-placeholder {
-      text-align: center;
-      color: #64748b;
-      padding: 10px 0;
+    .cat-btn {
+      padding: 0.7rem 0.25rem; border-radius: 0.75rem;
+      background: rgba(30,41,59,0.85); border: 1px solid #334155;
+      color: #f1f5f9; font-size: 0.8rem; font-weight: 500;
+      cursor: pointer; text-align: center;
     }
-    .detected-item {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
+    .cat-btn:active { transform: scale(0.97); }
+    .cat-btn.active {
+      background: linear-gradient(135deg, #0d9488, #14b8a6);
+      border-color: transparent; box-shadow: 0 4px 14px rgba(20,184,166,0.35);
     }
-    .item-info {
-      display: flex;
-      flex-direction: column;
+    .sub-item {
+      width: 100%; text-align: left;
+      padding: 0.75rem 0.9rem; border-radius: 0.75rem;
+      background: rgba(30,41,59,0.7); border: 1px solid #334155;
+      color: #f1f5f9; cursor: pointer; margin-bottom: 0.45rem;
     }
-    .item-name {
-      font-size: 1.5rem;
-      font-weight: 700;
-      text-transform: capitalize;
+    .sub-item:active { border-color: #14b8a6; }
+    .price-big {
+      background: linear-gradient(135deg, #0f766e 0%, #14b8a6 100%);
+      padding: 1.25rem; text-align: center;
     }
-    .item-category {
-      font-size: 0.85rem;
-      color: #fbbf24;
-      background: rgba(251,191,36,0.15);
-      padding: 2px 12px;
-      border-radius: 20px;
-      display: inline-block;
-      margin-top: 6px;
-      width: fit-content;
+    .fade-in { animation: fadeIn 0.28s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .hidden { display: none !important; }
+    .flex-between { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+    .text-xs { font-size: 0.75rem; }
+    .text-sm { font-size: 0.875rem; }
+    .text-teal { color: #5eead4; }
+    .text-muted { color: #94a3b8; }
+    .text-dim { color: #64748b; }
+    details summary {
+      padding: 0.75rem 1rem; cursor: pointer; list-style: none;
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 0.875rem;
     }
-    .price {
-      font-size: 2rem;
-      font-weight: 800;
-      color: #34d399;
-    }
-    .price small {
-      font-size: 0.9rem;
-      font-weight: 400;
-      color: #a7f3d0;
-    }
-    .no-result {
-      color: #64748b;
-      text-align: center;
-      font-style: italic;
-    }
-    .status-bar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 0 16px 12px;
-      font-size: 0.75rem;
-      color: #475569;
-    }
-    button {
-      background: #f59e0b;
-      border: none;
-      color: #0f172a;
-      font-weight: bold;
-      padding: 8px 16px;
-      border-radius: 40px;
-      cursor: pointer;
-      transition: 0.2s;
-    }
-    button:active {
-      transform: scale(0.96);
-    }
-    @media (min-width: 768px) {
-      body {
-        padding: 20px;
-        background: #0f172a radial-gradient(circle at 50% 0%, #1e293b, #0f172a);
-      }
-      .app {
-        max-width: 720px;
-        flex-direction: row;
-        flex-wrap: wrap;
-        justify-content: center;
-      }
-      .camera-wrap {
-        aspect-ratio: 4/3;
-        max-height: 400px;
-        margin: 16px;
-        flex: 1 1 300px;
-      }
-      .result-card {
-        flex: 1 1 250px;
-        margin: 16px;
-      }
-    }
+    details summary::-webkit-details-marker { display: none; }
+    label { cursor: pointer; }
   </style>
 </head>
 <body>
-<div class="app">
-  <div class="header">
-    <h1>♻️ 废品一眼价</h1>
-    <div class="date-badge" id="dateDisplay"></div>
-  </div>
+<div class="wrap">
 
-  <div class="camera-wrap" id="cameraWrap">
-    <video id="video" autoplay playsinline muted></video>
-    <canvas id="canvas"></canvas>
-  </div>
-
-  <div class="result-card" id="resultCard">
-    <div class="loading-placeholder" id="loadingMsg">⏳ 加载 AI 模型中...</div>
-    <div id="resultContent" style="display: none;">
-      <div class="detected-item">
-        <div class="item-info">
-          <span class="item-name" id="detectedName">--</span>
-          <span class="item-category" id="categoryLabel">--</span>
-        </div>
-        <div class="price" id="priceDisplay">--</div>
-      </div>
+  <!-- Header -->
+  <header class="flex-between" style="margin-bottom:1rem;">
+    <div>
+      <h1 style="font-size:1.25rem;font-weight:700;">废品一眼价</h1>
+      <p class="text-xs text-teal" style="opacity:0.75;margin-top:2px;">📷 拍照看图选材料 · 全国参考价</p>
     </div>
-    <div class="no-result" id="noResult" style="display: none;">🤔 没认出废品，靠近一点试试</div>
+  </header>
+
+  <!-- Camera -->
+  <div class="camera-box">
+    <video id="video" autoplay playsinline muted></video>
+    <img id="previewImg" alt="预览图" />
+    <div id="cameraTip" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);font-size:0.875rem;color:#cbd5e1;pointer-events:none;">
+      启动相机中...
+    </div>
   </div>
 
-  <div class="status-bar">
-    <span id="modelStatus">模型未加载</span>
-    <button id="toggleCamera">📸 关闭相机</button>
+  <!-- 拍照/相册按钮 -->
+  <div class="grid-2">
+    <button id="btnCapture" onclick="capture()" class="btn btn-primary">
+      <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+      拍照
+    </button>
+    <label class="btn btn-secondary">
+      <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+      相册
+      <input type="file" accept="image/*" style="display:none;" onchange="onUpload(event)" />
+    </label>
   </div>
+
+  <!-- 分类选择面板（拍照后出现） -->
+  <div id="categoryPanel" class="glass hidden fade-in" style="padding:1rem;margin-bottom:0.9rem;">
+    <p class="text-xs text-muted" style="margin-bottom:0.75rem;">📌 看图选材料大类</p>
+    <div class="grid-cats" id="categoryBtns"></div>
+  </div>
+
+  <!-- 小类选择 -->
+  <div id="subPanel" class="glass hidden fade-in" style="padding:1rem;margin-bottom:0.9rem;">
+    <div class="flex-between" style="margin-bottom:0.75rem;">
+      <p class="text-xs text-muted">选择具体类型</p>
+      <button onclick="backToCategory()" style="background:none;border:none;color:#2dd4bf;cursor:pointer;font-size:0.75rem;">← 返回大类</button>
+    </div>
+    <div id="subList"></div>
+  </div>
+
+  <!-- 结果卡片 -->
+  <div id="resultCard" class="glass hidden fade-in" style="overflow:hidden;margin-bottom:1rem;">
+    <div class="price-big">
+      <p class="text-xs" style="opacity:0.9;margin-bottom:4px;" id="resultName">—</p>
+      <p style="font-size:1.875rem;font-weight:700;letter-spacing:-0.02em;" id="resultPrice">—</p>
+      <p class="text-xs" style="opacity:0.8;margin-top:4px;">元 / 公斤 · 全国市场参考价</p>
+    </div>
+    <div style="padding:1rem;">
+      <div style="display:flex;gap:0.5rem;margin-bottom:0.6rem;font-size:0.875rem;">
+        <span class="text-muted" style="flex-shrink:0;">说明</span>
+        <span id="resultDesc"></span>
+      </div>
+      <div style="display:flex;gap:0.5rem;margin-bottom:0.75rem;font-size:0.875rem;">
+        <span class="text-muted" style="flex-shrink:0;">提示</span>
+        <span id="resultTip"></span>
+      </div>
+      <div style="padding-top:0.6rem;border-top:1px solid rgba(51,65,85,0.5);margin-bottom:0.75rem;">
+        <p class="text-xs text-dim">价格每日波动，实际成交受纯度、数量、地区影响。本工具仅供参考。</p>
+      </div>
+      <button onclick="resetAll()" class="btn btn-secondary" style="width:100%;border-radius:0.75rem;">📸 重新拍照</button>
+    </div>
+  </div>
+
+  <!-- 完整价格表 -->
+  <details class="glass">
+    <summary>
+      <span>📋 全国废品参考价</span>
+      <span class="text-xs text-dim">展开</span>
+    </summary>
+    <div id="allPrices" style="padding:0 1rem 1rem;font-size:0.75rem;"></div>
+  </details>
+
+  <p class="text-xs text-dim" style="text-align:center;margin-top:1.25rem;">数据参考 2026年8月全国主要市场</p>
 </div>
 
 <script>
-  (function() {
-    // ---------- 废品映射表（AI类别 -> 废品类型，今日价格）----------
-    const wasteMap = {
-      // 金属类 -> 废铁/废铜/废铝
-      'scissors': { name: '剪刀', type: '废铁', price: '2.2', unit: '元/公斤' },
-      'knife': { name: '刀具', type: '废铁', price: '2.2', unit: '元/公斤' },
-      'spoon': { name: '勺子', type: '不锈钢', price: '3.5', unit: '元/公斤' },
-      'fork': { name: '叉子', type: '不锈钢', price: '3.5', unit: '元/公斤' },
-      'wine glass': { name: '酒杯', type: '玻璃', price: '0.4', unit: '元/公斤' },
-      'bottle': { name: '瓶子', type: '塑料', price: '0.3', unit: '元/个' },
-      'cup': { name: '杯子', type: '塑料/纸', price: '0.15', unit: '元/个' },
-      'cell phone': { name: '手机', type: '电子废品', price: '5.0', unit: '元/个' },
-      'keyboard': { name: '键盘', type: '电子废品', price: '1.5', unit: '元/个' },
-      'book': { name: '书本', type: '废纸', price: '0.9', unit: '元/公斤' },
-      'refrigerator': { name: '冰箱', type: '大家电', price: '120', unit: '元/台' },
-      'sink': { name: '水槽', type: '不锈钢', price: '3.0', unit: '元/公斤' },
-      'toaster': { name: '烤面包机', type: '小家电', price: '2.0', unit: '元/个' },
-      'remote': { name: '遥控器', type: '电子废品', price: '0.5', unit: '元/个' },
-      'hair drier': { name: '吹风机', type: '小家电', price: '1.8', unit: '元/个' },
-    };
-    // 默认兜底：如果检测到物品但不在表里，归为“杂项”
-    const defaultWaste = { type: '未知废品', price: '?', unit: '' };
-
-    // DOM 元素
-    const video = document.getElementById('video');
-    const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d');
-    const loadingMsg = document.getElementById('loadingMsg');
-    const resultContent = document.getElementById('resultContent');
-    const noResult = document.getElementById('noResult');
-    const detectedName = document.getElementById('detectedName');
-    const categoryLabel = document.getElementById('categoryLabel');
-    const priceDisplay = document.getElementById('priceDisplay');
-    const modelStatusSpan = document.getElementById('modelStatus');
-    const toggleBtn = document.getElementById('toggleCamera');
-    const dateDisplay = document.getElementById('dateDisplay');
-
-    let model = null;
-    let stream = null;
-    let isCameraOn = true;
-    let animationId = null;
-    let lastDetectionTime = 0;
-    const DETECT_INTERVAL = 600; // 毫秒
-
-    // 显示今日日期
-    const today = new Date();
-    dateDisplay.textContent = `📅 今日回收价 · ${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
-
-    // 初始化摄像头
-    async function startCamera() {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 640 } },
-          audio: false
-        });
-        video.srcObject = stream;
-        video.onloadedmetadata = () => {
-          canvas.width = video.videoWidth;
-          canvas.height = video.videoHeight;
-        };
-        isCameraOn = true;
-        toggleBtn.textContent = '📸 关闭相机';
-        modelStatusSpan.textContent = '摄像头已开启';
-        detectLoop();
-      } catch (err) {
-        alert('无法打开摄像头，请确保已授权且使用 HTTPS/localhost。');
-        console.error(err);
-        modelStatusSpan.textContent = '摄像头错误';
-      }
+  // ========== 废品数据库 ==========
+  const CATEGORIES = {
+    "铜": {
+      icon: "🟤",
+      items: [
+        { name: "光亮铜", price: "90~91", desc: "干净光亮的紫铜线、铜管", tip: "纯度越高越好" },
+        { name: "紫杂铜", price: "85~88", desc: "普通紫铜废料", tip: "尽量分类干净" },
+        { name: "电缆铜", price: "88~91", desc: "电缆铜芯/铜米", tip: "含铜量高更值钱" },
+        { name: "马达铜", price: "85~87", desc: "电机绕组铜", tip: "拆解后价格更高" },
+        { name: "黄铜", price: "62~65", desc: "黄铜管件、边角料", tip: "干净边料更好" },
+        { name: "黄杂铜", price: "55~60", desc: "混杂黄铜", tip: "杂质多价格偏低" }
+      ]
+    },
+    "铝": {
+      icon: "⚪",
+      items: [
+        { name: "型材铝", price: "19~20", desc: "门窗、工业铝型材", tip: "无钉无喷涂最佳" },
+        { name: "易拉罐", price: "17~18", desc: "饮料铝罐", tip: "压扁干净更好卖" },
+        { name: "生铝", price: "16~18", desc: "铸铝件、机件", tip: "含铁油污会降价" },
+        { name: "铝线", price: "19.5~21", desc: "干净铝线", tip: "纯度高价格更好" }
+      ]
+    },
+    "铁": {
+      icon: "⬛",
+      items: [
+        { name: "重废", price: "2.2~2.4", desc: "厚度≥6mm钢板、工角槽", tip: "越厚越干净越好" },
+        { name: "中废", price: "2.0~2.2", desc: "厚度4-6mm边角料", tip: "分类清楚有优势" },
+        { name: "轻薄料", price: "1.7~2.0", desc: "薄铁皮、彩钢瓦", tip: "带油带漆降价" },
+        { name: "钢筋", price: "2.2~2.4", desc: "建筑钢筋", tip: "干净直料更好" },
+        { name: "生铁", price: "1.9~2.2", desc: "铸铁件", tip: "看含铁量" }
+      ]
+    },
+    "不锈钢": {
+      icon: "🔷",
+      items: [
+        { name: "304不锈钢", price: "10~11", desc: "常见304材质", tip: "磁铁几乎不吸" },
+        { name: "201不锈钢", price: "4.5~5.5", desc: "201材质", tip: "磁铁可吸，价格低" },
+        { name: "316不锈钢", price: "18~22", desc: "316材质", tip: "确认材质后更值钱" }
+      ]
+    },
+    "纸": {
+      icon: "📄",
+      items: [
+        { name: "纸箱", price: "1.2~1.6", desc: "黄板纸、纸箱", tip: "干燥无油污" },
+        { name: "书本纸", price: "1.5~2.0", desc: "旧书报纸", tip: "干净未受潮" },
+        { name: "杂纸", price: "0.8~1.2", desc: "混合废纸", tip: "分类后价格提升" }
+      ]
+    },
+    "塑料": {
+      icon: "🧴",
+      items: [
+        { name: "PET瓶", price: "3.5~4.5", desc: "矿泉水瓶等", tip: "压扁去盖更好" },
+        { name: "硬塑料", price: "2.5~4.0", desc: "硬质塑料", tip: "按材质分类" },
+        { name: "泡沫", price: "0.8~1.5", desc: "泡沫包装", tip: "体积大价值低" }
+      ]
     }
+  };
 
-    function stopCamera() {
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-        stream = null;
-        video.srcObject = null;
-      }
-      isCameraOn = false;
-      toggleBtn.textContent = '📸 打开相机';
-      modelStatusSpan.textContent = '相机已关闭';
-      if (animationId) {
-        cancelAnimationFrame(animationId);
-        animationId = null;
-      }
-      // 清空结果
-      showNoResult();
-    }
+  // DOM 元素
+  const video = document.getElementById('video');
+  const previewImg = document.getElementById('previewImg');
+  const cameraTip = document.getElementById('cameraTip');
+  const categoryPanel = document.getElementById('categoryPanel');
+  const subPanel = document.getElementById('subPanel');
+  const resultCard = document.getElementById('resultCard');
+  const categoryBtns = document.getElementById('categoryBtns');
+  const subList = document.getElementById('subList');
+  const allPricesDiv = document.getElementById('allPrices');
 
-    // 切换相机
-    toggleBtn.addEventListener('click', () => {
-      if (isCameraOn) {
-        stopCamera();
-      } else {
-        startCamera();
-      }
-    });
+  let stream = null;
+  let imageCaptured = false;
+  let selectedCategory = null;
 
-    // 加载 COCO-SSD 模型
-    async function loadModel() {
-      modelStatusSpan.textContent = '正在下载 AI 模型...';
-      try {
-        model = await cocoSsd.load();
-        modelStatusSpan.textContent = 'AI 就绪 ✅';
-        loadingMsg.style.display = 'none';
-        // 自动开启摄像头
-        startCamera();
-      } catch (e) {
-        modelStatusSpan.textContent = '模型加载失败';
-        loadingMsg.textContent = '❌ 模型加载失败，请刷新重试。';
-        console.error(e);
-      }
-    }
+  function init() {
+    renderAllPrices();
+    startCamera();
+    renderCategories();
+  }
 
-    // 检测循环
-    function detectLoop() {
-      if (!isCameraOn || !model) return;
-      animationId = requestAnimationFrame(async (timestamp) => {
-        if (timestamp - lastDetectionTime > DETECT_INTERVAL) {
-          await runDetection();
-          lastDetectionTime = timestamp;
-        }
-        detectLoop();
+  async function startCamera() {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 960 } },
+        audio: false
       });
+      video.srcObject = stream;
+      cameraTip.style.display = 'none';
+    } catch (e) {
+      cameraTip.textContent = '无法打开相机，可使用相册上传';
+      cameraTip.style.pointerEvents = 'auto';
     }
+  }
 
-    async function runDetection() {
-      if (video.readyState !== 4) return;
-      try {
-        const predictions = await model.detect(video);
-        // 过滤低置信度
-        const confident = predictions.filter(p => p.score >= 0.5);
-        // 画框并显示结果
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        if (confident.length > 0) {
-          const top = confident[0]; // 取置信度最高的
-          // 画框
-          ctx.strokeStyle = '#fbbf24';
-          ctx.lineWidth = 4;
-          ctx.strokeRect(top.bbox[0], top.bbox[1], top.bbox[2], top.bbox[3]);
-          ctx.fillStyle = '#fbbf24';
-          ctx.font = 'bold 16px sans-serif';
-          ctx.fillText(top.class, top.bbox[0], top.bbox[1] > 20 ? top.bbox[1] - 6 : 20);
-
-          // 更新价格卡片
-          const wasteInfo = wasteMap[top.class] || { name: top.class, type: defaultWaste.type, price: defaultWaste.price, unit: defaultWaste.unit };
-          const displayName = wasteInfo.name || top.class;
-          const typeLabel = wasteInfo.type;
-          const priceVal = wasteInfo.price;
-          const unit = wasteInfo.unit || '';
-
-          detectedName.textContent = displayName;
-          categoryLabel.textContent = typeLabel;
-          if (priceVal === '?') {
-            priceDisplay.innerHTML = `? <small>查无定价</small>`;
-          } else {
-            priceDisplay.innerHTML = `${priceVal} <small>${unit}</small>`;
-          }
-
-          resultContent.style.display = 'block';
-          noResult.style.display = 'none';
-          loadingMsg.style.display = 'none';
-        } else {
-          // 没检测到东西
-          showNoResult();
-        }
-      } catch (e) {
-        console.warn('检测出错', e);
-      }
+  function stopCamera() {
+    if (stream) {
+      stream.getTracks().forEach(t => t.stop());
+      stream = null;
     }
+  }
 
-    function showNoResult() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      resultContent.style.display = 'none';
-      noResult.style.display = 'block';
-      loadingMsg.style.display = 'none';
-    }
+  function capture() {
+    if (!stream || !video.videoWidth) return alert('相机未就绪');
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+    showPreview(dataUrl);
+  }
 
-    // 页面启动
-    loadModel();
+  function onUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => showPreview(ev.target.result);
+    reader.readAsDataURL(file);
+  }
 
-    // 页面卸载时关闭摄像头
-    window.addEventListener('beforeunload', () => {
-      stopCamera();
+  function showPreview(dataUrl) {
+    previewImg.src = dataUrl;
+    previewImg.style.display = 'block';
+    video.style.display = 'none';
+    cameraTip.style.display = 'none';
+    imageCaptured = true;
+
+    categoryPanel.classList.remove('hidden');
+    subPanel.classList.add('hidden');
+    resultCard.classList.add('hidden');
+    document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
+    selectedCategory = null;
+  }
+
+  function renderCategories() {
+    categoryBtns.innerHTML = '';
+    Object.keys(CATEGORIES).forEach(cat => {
+      const btn = document.createElement('button');
+      btn.className = 'cat-btn';
+      btn.innerHTML = `<div style="font-size:1.1rem;margin-bottom:2px;">${CATEGORIES[cat].icon}</div>${cat}`;
+      btn.onclick = () => selectCategory(cat, btn);
+      categoryBtns.appendChild(btn);
     });
-  })();
+  }
+
+  function selectCategory(cat, btnEl) {
+    document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
+    btnEl.classList.add('active');
+    selectedCategory = cat;
+
+    subPanel.classList.remove('hidden');
+    resultCard.classList.add('hidden');
+
+    subList.innerHTML = '';
+    CATEGORIES[cat].items.forEach(item => {
+      const div = document.createElement('button');
+      div.className = 'sub-item';
+      div.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-weight:500;font-size:0.875rem;">${item.name}</span>
+          <span style="color:#5eead4;font-weight:600;">¥ ${item.price}</span>
+        </div>
+        <div class="text-xs text-muted" style="margin-top:2px;">${item.desc}</div>
+      `;
+      div.onclick = () => showResult(item.name, item.price, item.desc, item.tip);
+      subList.appendChild(div);
+    });
+  }
+
+  function backToCategory() {
+    subPanel.classList.add('hidden');
+    resultCard.classList.add('hidden');
+    document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
+    selectedCategory = null;
+  }
+
+  function showResult(name, price, desc, tip) {
+    document.getElementById('resultName').textContent = name;
+    document.getElementById('resultPrice').textContent = `¥ ${price}`;
+    document.getElementById('resultDesc').textContent = desc;
+    document.getElementById('resultTip').textContent = tip;
+    resultCard.classList.remove('hidden');
+    setTimeout(() => resultCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
+  }
+
+  function resetAll() {
+    previewImg.style.display = 'none';
+    video.style.display = 'block';
+    imageCaptured = false;
+    categoryPanel.classList.add('hidden');
+    subPanel.classList.add('hidden');
+    resultCard.classList.add('hidden');
+    if (!stream) startCamera();
+  }
+
+  function renderAllPrices() {
+    let html = '';
+    Object.keys(CATEGORIES).forEach(cat => {
+      html += `<div style="margin-bottom:1rem;"><div style="font-weight:500;color:#cbd5e1;margin-bottom:0.35rem;">${CATEGORIES[cat].icon} ${cat}</div>`;
+      CATEGORIES[cat].items.forEach(item => {
+        html += `<div style="display:flex;justify-content:space-between;color:#94a3b8;margin-bottom:2px;">
+          <span>${item.name}</span><span style="color:#2dd4bf;">¥ ${item.price}/kg</span>
+        </div>`;
+      });
+      html += `</div>`;
+    });
+    allPricesDiv.innerHTML = html;
+  }
+
+  window.addEventListener('beforeunload', () => stopCamera());
+
+  init();
 </script>
 </body>
 </html>
