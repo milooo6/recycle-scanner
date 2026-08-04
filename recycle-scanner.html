@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>废品识别相机 · 今日回收价</title>
+  <!-- TensorFlow.js 和 coco-ssd 模型 -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 12px;
+    }
+    .app {
+      max-width: 480px;
+      width: 100%;
+      background: #1e293b;
+      border-radius: 28px;
+      overflow: hidden;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+      display: flex;
+      flex-direction: column;
+    }
+    .header {
+      padding: 20px 16px 8px;
+      text-align: center;
+    }
+    .header h1 {
+      font-size: 1.8rem;
+      font-weight: 600;
+      background: linear-gradient(135deg, #fbbf24, #f59e0b);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .date-badge {
+      font-size: 0.8rem;
+      color: #94a3b8;
+      margin-top: 4px;
+    }
+    .camera-wrap {
+      position: relative;
+      width: 100%;
+      background: #000;
+      aspect-ratio: 1 / 1;
+      max-height: 60vh;
+      overflow: hidden;
+      border-radius: 20px;
+      margin: 8px 16px;
+    }
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+    .result-card {
+      background: #0f172a;
+      margin: 12px 16px 24px;
+      border-radius: 20px;
+      padding: 20px;
+      border: 1px solid #334155;
+      transition: all 0.3s;
+    }
+    .loading-placeholder {
+      text-align: center;
+      color: #64748b;
+      padding: 10px 0;
+    }
+    .detected-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .item-info {
+      display: flex;
+      flex-direction: column;
+    }
+    .item-name {
+      font-size: 1.5rem;
+      font-weight: 700;
+      text-transform: capitalize;
+    }
+    .item-category {
+      font-size: 0.85rem;
+      color: #fbbf24;
+      background: rgba(251,191,36,0.15);
+      padding: 2px 12px;
+      border-radius: 20px;
+      display: inline-block;
+      margin-top: 6px;
+      width: fit-content;
+    }
+    .price {
+      font-size: 2rem;
+      font-weight: 800;
+      color: #34d399;
+    }
+    .price small {
+      font-size: 0.9rem;
+      font-weight: 400;
+      color: #a7f3d0;
+    }
+    .no-result {
+      color: #64748b;
+      text-align: center;
+      font-style: italic;
+    }
+    .status-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 16px 12px;
+      font-size: 0.75rem;
+      color: #475569;
+    }
+    button {
+      background: #f59e0b;
+      border: none;
+      color: #0f172a;
+      font-weight: bold;
+      padding: 8px 16px;
+      border-radius: 40px;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    button:active {
+      transform: scale(0.96);
+    }
+    @media (min-width: 768px) {
+      body {
+        padding: 20px;
+        background: #0f172a radial-gradient(circle at 50% 0%, #1e293b, #0f172a);
+      }
+      .app {
+        max-width: 720px;
+        flex-direction: row;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+      .camera-wrap {
+        aspect-ratio: 4/3;
+        max-height: 400px;
+        margin: 16px;
+        flex: 1 1 300px;
+      }
+      .result-card {
+        flex: 1 1 250px;
+        margin: 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <h1>♻️ 废品一眼价</h1>
+    <div class="date-badge" id="dateDisplay"></div>
+  </div>
+
+  <div class="camera-wrap" id="cameraWrap">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <div class="result-card" id="resultCard">
+    <div class="loading-placeholder" id="loadingMsg">⏳ 加载 AI 模型中...</div>
+    <div id="resultContent" style="display: none;">
+      <div class="detected-item">
+        <div class="item-info">
+          <span class="item-name" id="detectedName">--</span>
+          <span class="item-category" id="categoryLabel">--</span>
+        </div>
+        <div class="price" id="priceDisplay">--</div>
+      </div>
+    </div>
+    <div class="no-result" id="noResult" style="display: none;">🤔 没认出废品，靠近一点试试</div>
+  </div>
+
+  <div class="status-bar">
+    <span id="modelStatus">模型未加载</span>
+    <button id="toggleCamera">📸 关闭相机</button>
+  </div>
+</div>
+
+<script>
+  (function() {
+    // ---------- 废品映射表（AI类别 -> 废品类型，今日价格）----------
+    const wasteMap = {
+      // 金属类 -> 废铁/废铜/废铝
+      'scissors': { name: '剪刀', type: '废铁', price: '2.2', unit: '元/公斤' },
+      'knife': { name: '刀具', type: '废铁', price: '2.2', unit: '元/公斤' },
+      'spoon': { name: '勺子', type: '不锈钢', price: '3.5', unit: '元/公斤' },
+      'fork': { name: '叉子', type: '不锈钢', price: '3.5', unit: '元/公斤' },
+      'wine glass': { name: '酒杯', type: '玻璃', price: '0.4', unit: '元/公斤' },
+      'bottle': { name: '瓶子', type: '塑料', price: '0.3', unit: '元/个' },
+      'cup': { name: '杯子', type: '塑料/纸', price: '0.15', unit: '元/个' },
+      'cell phone': { name: '手机', type: '电子废品', price: '5.0', unit: '元/个' },
+      'keyboard': { name: '键盘', type: '电子废品', price: '1.5', unit: '元/个' },
+      'book': { name: '书本', type: '废纸', price: '0.9', unit: '元/公斤' },
+      'refrigerator': { name: '冰箱', type: '大家电', price: '120', unit: '元/台' },
+      'sink': { name: '水槽', type: '不锈钢', price: '3.0', unit: '元/公斤' },
+      'toaster': { name: '烤面包机', type: '小家电', price: '2.0', unit: '元/个' },
+      'remote': { name: '遥控器', type: '电子废品', price: '0.5', unit: '元/个' },
+      'hair drier': { name: '吹风机', type: '小家电', price: '1.8', unit: '元/个' },
+    };
+    // 默认兜底：如果检测到物品但不在表里，归为“杂项”
+    const defaultWaste = { type: '未知废品', price: '?', unit: '' };
+
+    // DOM 元素
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const loadingMsg = document.getElementById('loadingMsg');
+    const resultContent = document.getElementById('resultContent');
+    const noResult = document.getElementById('noResult');
+    const detectedName = document.getElementById('detectedName');
+    const categoryLabel = document.getElementById('categoryLabel');
+    const priceDisplay = document.getElementById('priceDisplay');
+    const modelStatusSpan = document.getElementById('modelStatus');
+    const toggleBtn = document.getElementById('toggleCamera');
+    const dateDisplay = document.getElementById('dateDisplay');
+
+    let model = null;
+    let stream = null;
+    let isCameraOn = true;
+    let animationId = null;
+    let lastDetectionTime = 0;
+    const DETECT_INTERVAL = 600; // 毫秒
+
+    // 显示今日日期
+    const today = new Date();
+    dateDisplay.textContent = `📅 今日回收价 · ${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+
+    // 初始化摄像头
+    async function startCamera() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 640 } },
+          audio: false
+        });
+        video.srcObject = stream;
+        video.onloadedmetadata = () => {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+        };
+        isCameraOn = true;
+        toggleBtn.textContent = '📸 关闭相机';
+        modelStatusSpan.textContent = '摄像头已开启';
+        detectLoop();
+      } catch (err) {
+        alert('无法打开摄像头，请确保已授权且使用 HTTPS/localhost。');
+        console.error(err);
+        modelStatusSpan.textContent = '摄像头错误';
+      }
+    }
+
+    function stopCamera() {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+        stream = null;
+        video.srcObject = null;
+      }
+      isCameraOn = false;
+      toggleBtn.textContent = '📸 打开相机';
+      modelStatusSpan.textContent = '相机已关闭';
+      if (animationId) {
+        cancelAnimationFrame(animationId);
+        animationId = null;
+      }
+      // 清空结果
+      showNoResult();
+    }
+
+    // 切换相机
+    toggleBtn.addEventListener('click', () => {
+      if (isCameraOn) {
+        stopCamera();
+      } else {
+        startCamera();
+      }
+    });
+
+    // 加载 COCO-SSD 模型
+    async function loadModel() {
+      modelStatusSpan.textContent = '正在下载 AI 模型...';
+      try {
+        model = await cocoSsd.load();
+        modelStatusSpan.textContent = 'AI 就绪 ✅';
+        loadingMsg.style.display = 'none';
+        // 自动开启摄像头
+        startCamera();
+      } catch (e) {
+        modelStatusSpan.textContent = '模型加载失败';
+        loadingMsg.textContent = '❌ 模型加载失败，请刷新重试。';
+        console.error(e);
+      }
+    }
+
+    // 检测循环
+    function detectLoop() {
+      if (!isCameraOn || !model) return;
+      animationId = requestAnimationFrame(async (timestamp) => {
+        if (timestamp - lastDetectionTime > DETECT_INTERVAL) {
+          await runDetection();
+          lastDetectionTime = timestamp;
+        }
+        detectLoop();
+      });
+    }
+
+    async function runDetection() {
+      if (video.readyState !== 4) return;
+      try {
+        const predictions = await model.detect(video);
+        // 过滤低置信度
+        const confident = predictions.filter(p => p.score >= 0.5);
+        // 画框并显示结果
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (confident.length > 0) {
+          const top = confident[0]; // 取置信度最高的
+          // 画框
+          ctx.strokeStyle = '#fbbf24';
+          ctx.lineWidth = 4;
+          ctx.strokeRect(top.bbox[0], top.bbox[1], top.bbox[2], top.bbox[3]);
+          ctx.fillStyle = '#fbbf24';
+          ctx.font = 'bold 16px sans-serif';
+          ctx.fillText(top.class, top.bbox[0], top.bbox[1] > 20 ? top.bbox[1] - 6 : 20);
+
+          // 更新价格卡片
+          const wasteInfo = wasteMap[top.class] || { name: top.class, type: defaultWaste.type, price: defaultWaste.price, unit: defaultWaste.unit };
+          const displayName = wasteInfo.name || top.class;
+          const typeLabel = wasteInfo.type;
+          const priceVal = wasteInfo.price;
+          const unit = wasteInfo.unit || '';
+
+          detectedName.textContent = displayName;
+          categoryLabel.textContent = typeLabel;
+          if (priceVal === '?') {
+            priceDisplay.innerHTML = `? <small>查无定价</small>`;
+          } else {
+            priceDisplay.innerHTML = `${priceVal} <small>${unit}</small>`;
+          }
+
+          resultContent.style.display = 'block';
+          noResult.style.display = 'none';
+          loadingMsg.style.display = 'none';
+        } else {
+          // 没检测到东西
+          showNoResult();
+        }
+      } catch (e) {
+        console.warn('检测出错', e);
+      }
+    }
+
+    function showNoResult() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      resultContent.style.display = 'none';
+      noResult.style.display = 'block';
+      loadingMsg.style.display = 'none';
+    }
+
+    // 页面启动
+    loadModel();
+
+    // 页面卸载时关闭摄像头
+    window.addEventListener('beforeunload', () => {
+      stopCamera();
+    });
+  })();
+</script>
+</body>
+</html>
